@@ -3,3 +3,6 @@ __pycache__/
 .idea
 DeepLearning/
 requirements.txt
+/DL/simpsons_classifier/label_encoder.pkl
+*.pth
+*.csv

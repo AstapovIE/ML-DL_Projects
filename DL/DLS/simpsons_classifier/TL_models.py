@@ -7,11 +7,26 @@ from torchvision import models
 # TODO add scheduler
 
 class AlexNet():
-    def __init__(self, n_classes, use_gpu):
+    def __init__(self, n_classes, use_gpu, bigger):
         # num_features -- это размерность вектора фич, поступающего на вход FC-слою
-        num_features = 9216
+        in_features = 9216
         model = models.alexnet(weights='AlexNet_Weights.DEFAULT')
-        model.classifier = nn.Linear(num_features, n_classes)
+
+        if bigger:
+            model.classifier = nn.Sequential(
+                nn.Linear(in_features, 512),
+                nn.ReLU(),
+                nn.Dropout(p=0.3),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(p=0.3),
+                nn.Linear(256, n_classes)  # Финальный слой без активации (она будет внутри loss)
+            )
+        else:
+            model.classifier = nn.Linear(in_features, n_classes)
+
+
+        # model.classifier = nn.Linear(num_features, n_classes)
         if use_gpu:
             model = model.cuda()
         # Обучаем только классификатор
@@ -19,13 +34,39 @@ class AlexNet():
         self.model = model
         self.name = 'AlexNet'
 
-class Efficient_b2():
+class ResNet18():
     def __init__(self, n_classes, use_gpu):
+        # num_features -- это размерность вектора фич, поступающего на вход FC-слою
+        model = models.resnet18(weights='ResNet18_Weights.DEFAULT')
+        print(model.fc.in_features)
+        model.fc = nn.Linear(model.fc.in_features, n_classes)
+        if use_gpu:
+            model = model.cuda()
+        # Обучаем только классификатор
+        self.optimizer = optim.Adam(model.fc.parameters(), lr=1e-4)
+        self.model = model
+        self.name = 'ResNet50'
+
+class Efficient_b2():
+    def __init__(self, n_classes, use_gpu, bigger=False):
         model = models.efficientnet_b2(weights='EfficientNet_B2_Weights.DEFAULT')
         for param in model.features.parameters():
             param.requires_grad = False
 
-        model.classifier = nn.Linear(model.classifier[1].in_features, n_classes)
+        in_features = model.classifier[1].in_features
+
+        if bigger:
+            model.classifier = nn.Sequential(
+                nn.Linear(in_features, 512),
+                nn.ReLU(),
+                nn.Dropout(p=0.3),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(p=0.3),
+                nn.Linear(256, n_classes)  # Финальный слой без активации (она будет внутри loss)
+            )
+        else:
+            model.classifier = nn.Linear(model.classifier[1].in_features, n_classes)
         if use_gpu:
             model = model.cuda()
 
@@ -33,6 +74,39 @@ class Efficient_b2():
         self.optimizer = optim.Adam(model.classifier.parameters(), lr=1e-4)
         self.model = model
         self.name = 'EfficientNetB2'
+
+class Inception_v3():
+    def __init__(self, n_classes, use_gpu, bigger=False):
+        model = models.inception_v3(weights='DEFAULT')
+        for param in model.parameters():
+            param.requires_grad = False
+
+        in_features = model.fc.in_features
+        model.AuxLogits.fc = nn.Linear(model.AuxLogits.fc.in_features, n_classes)
+
+        if bigger:
+            model.fc = nn.Sequential(
+                nn.Linear(in_features, 512),
+                nn.ReLU(),
+                nn.Dropout(p=0.3),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(p=0.3),
+                nn.Linear(256, n_classes)  # Финальный слой без активации (она будет внутри loss)
+            )
+        else:
+            model.fc = nn.Linear(in_features, n_classes)
+        if use_gpu:
+            model = model.cuda()
+
+        # Обучаем только классификатор
+        self.optimizer = torch.optim.Adam(params=[
+            {"params": model.AuxLogits.fc.parameters(), "lr": 1e-4},
+            {"params": model.fc.parameters(), "lr": 1e-4}
+        ])
+        model.aux_logits = True
+        self.model = model
+        self.name = 'Inception_v3'
 
 
 # Очень простая сеть

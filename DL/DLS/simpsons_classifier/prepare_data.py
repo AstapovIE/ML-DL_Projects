@@ -6,8 +6,10 @@ import pickle
 from PIL import Image
 import matplotlib.pyplot as plt
 from pathlib import Path
+import torch
 
 from torchvision import transforms
+from torchvision.transforms import v2
 
 # разные режимы датасета
 DATA_MODES = ['train', 'val', 'test']
@@ -52,11 +54,6 @@ class SimpsonsDataset(Dataset):
         return image
 
     def __getitem__(self, index):
-        # для преобразования изображений в тензоры PyTorch и нормализации входа
-        # transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        # ])
         x = self.load_sample(self.files[index])
         x = self._prepare_sample(x)
         x = np.array(x / 255, dtype='float32')
@@ -93,54 +90,79 @@ def get_transform():
     ])
     return transform
 
-def get_train_and_val_dataset():
+def data_transforms_v2():
+    data_transforms = {
+        'train': v2.Compose([
+            v2.ToImage(),
+            v2.Resize(size=(RESCALE_SIZE, RESCALE_SIZE)),
+            v2.RandomHorizontalFlip(p=0.3),
+            v2.RandomPerspective(distortion_scale=0.2),
+            v2.RandomRotation(degrees=(-30, 30)),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+        'val': v2.Compose([
+            v2.ToImage(),
+            v2.Resize(size=(RESCALE_SIZE, RESCALE_SIZE)),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+    }
+    return data_transforms
+
+def data_transforms_v3():
+    data_transforms = {
+        'train': v2.Compose([
+            v2.ToImage(),
+            v2.Resize(size=(299, 299)),
+            v2.RandomHorizontalFlip(p=0.3),
+            v2.RandomPerspective(distortion_scale=0.2),
+            v2.RandomRotation(degrees=(-30, 30)),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+        'val': v2.Compose([
+            v2.ToImage(),
+            v2.Resize(size=(299, 299)),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+    }
+    return data_transforms
+
+def get_train_and_val_dataset(is_inception=True):
     TRAIN_DIR = Path('../../../../MLData/simpsons/train/simpsons_dataset')
     train_val_files = sorted(list(TRAIN_DIR.rglob('*.jpg')))
 
     train_val_labels = [path.parent.name for path in train_val_files]
     n_classes = len(np.unique(train_val_labels))
 
-    train_files, val_files = train_test_split(train_val_files, test_size=0.25, stratify=train_val_labels)
+    train_files, val_files = train_test_split(train_val_files, test_size=0.10, stratify=train_val_labels)
 
-    val_dataset = SimpsonsDataset(val_files, mode='val', transform=get_transform(), rescale_size=RESCALE_SIZE)
-    train_dataset = SimpsonsDataset(train_files, mode='train', transform=get_transform(), rescale_size=RESCALE_SIZE)
+    if is_inception:
+        val_dataset = SimpsonsDataset_v2(val_files, mode='val', transform=data_transforms_v3()['val'])
+        train_dataset = SimpsonsDataset_v2(train_files, mode='train', transform=data_transforms_v3()['train'])
+    else:
+        val_dataset = SimpsonsDataset_v2(val_files, mode='val', transform=data_transforms_v2()['val'])
+        train_dataset = SimpsonsDataset_v2(train_files, mode='train', transform=data_transforms_v2()['train'])
     return train_dataset, val_dataset, n_classes
 
 
-def get_test_dataset():
+# def get_test_dataset():
+#     TEST_DIR = Path('../../../../MLData/simpsons/testset/testset')
+#     test_files = sorted(list(TEST_DIR.rglob('*.jpg')))
+#
+#     test_dataset = SimpsonsDataset_v2(test_files, mode='test', transform=data_transforms_v2()['train'], rescale_size=RESCALE_SIZE)
+#     return test_dataset
+
+def get_test_dataset(is_inception=False):
     TEST_DIR = Path('../../../../MLData/simpsons/testset/testset')
     test_files = sorted(list(TEST_DIR.rglob('*.jpg')))
 
-    test_dataset = SimpsonsDataset(test_files, mode='test', transform=get_transform(), rescale_size=RESCALE_SIZE)
-    return test_dataset
+    if is_inception:
+        return SimpsonsDataset_v2(test_files, mode='test', transform=data_transforms_v3()['val'])
+    return SimpsonsDataset_v2(test_files, mode='test', transform=data_transforms_v2()['val'])
 
-
-
-
-# train_val_files = sorted(list(TRAIN_DIR.rglob('*.jpg')))
-
-
-# train_val_labels = [path.parent.name for path in train_val_files]
-# train_files, val_files = train_test_split(train_val_files, test_size=0.15, stratify=train_val_labels)
-
-# transform = transforms.Compose([
-#             transforms.ToTensor(),
-#             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#         ])
-
-
-
-
-# for a in val_dataset:
-#     print(a[0].shape)
-#     break
-#
-# fig, ax = plt.subplots(nrows=3, ncols=3,figsize=(8, 8),sharey=True, sharex=True)
-# for fig_x in ax.flatten():
-#     random_characters = int(np.random.uniform(0,1000))
-#     im_val, label = val_dataset[random_characters]
-#     img_label = " ".join(map(lambda x: x.capitalize(),val_dataset.label_encoder.inverse_transform([label])[0].split('_')))
-#     imshow(im_val.data.cpu(),title=img_label,plt_ax=fig_x)
 
 
 class SimpsonsDataset_v2(Dataset):
