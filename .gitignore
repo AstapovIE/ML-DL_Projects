@@ -1,8 +1,12 @@
 __pycache__/
 *.ipynb_checkpoints*
 .idea
+
 DeepLearning/
 requirements.txt
 /DL/simpsons_classifier/label_encoder.pkl
+
 *.pth
+*.pkl
 *.csv
+*.zip

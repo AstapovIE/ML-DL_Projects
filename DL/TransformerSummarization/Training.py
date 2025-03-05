@@ -1,0 +1,116 @@
+from Masker import convert_batch
+
+import math
+from tqdm.auto import tqdm
+
+import torch.optim as optim
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+tqdm.get_lock().locks = []
+
+
+class NoamOpt(object):
+    def __init__(self, model, factor=2, warmup=4000, optimizer=None):
+        if optimizer is not None:
+            self.optimizer = optimizer
+        else:
+            self.optimizer = optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9)
+        self._step = 0
+        self.warmup = warmup
+        self.factor = factor
+        self.model_size = model.d_model
+        self._rate = 0
+
+    def step(self):
+        self._step += 1
+        rate = self.rate()
+        for p in self.optimizer.param_groups:
+            p['lr'] = rate
+        self._rate = rate
+        self.optimizer.step()
+
+    def rate(self, step = None):
+        if step is None:
+            step = self._step
+        return self.factor * (self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
+
+def do_epoch(model, criterion, data_iter, optimizer=None, name=None, device="cpu"):
+    epoch_loss = 0
+
+    is_train = not optimizer is None
+    name = name or ''
+    model.train(is_train)
+
+    batches_count = len(data_iter)
+
+    with torch.autograd.set_grad_enabled(is_train):
+        with tqdm(total=batches_count, dynamic_ncols=True, leave=True, desc=name) as progress_bar:
+            for i, batch in enumerate(data_iter):
+                source_inputs, target_inputs, source_mask, target_mask = convert_batch(batch, device)
+                logits = model.forward(source_inputs, target_inputs[:, :-1], source_mask, target_mask[:, :-1, :-1])
+
+                logits = logits.contiguous().view(-1, logits.shape[-1])
+                target = target_inputs[:, 1:].contiguous().view(-1)
+                loss = criterion(logits, target)
+
+                epoch_loss += loss.item()
+
+                if optimizer:
+                    optimizer.optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                progress_bar.update(1)  # Правильное обновление прогресса
+                progress_bar.set_postfix({"Loss": f"{loss.item():.5f}", "PPX": f"{math.exp(loss.item()):.2f}"})
+
+                # Итоговые значения после эпохи
+            progress_bar.set_postfix({"Final Loss": f"{epoch_loss / batches_count:.5f}",
+                                      "Final PPX": f"{math.exp(epoch_loss / batches_count):.2f}"})
+            progress_bar.refresh()
+
+    return epoch_loss / batches_count
+
+
+def fit(model, criterion, optimizer, train_iter, epochs_count=1, val_iter=None, device="cpu"):
+    for epoch in range(epochs_count):
+        name_prefix = '[{} / {}] '.format(epoch + 1, epochs_count)
+        train_loss = do_epoch(model, criterion, train_iter, optimizer, name_prefix + 'Train:', device)
+
+        if not val_iter is None:
+            val_loss = do_epoch(model, criterion, val_iter, None, name_prefix + '  Val:', device)
+
+    return model, train_loss, val_loss
+
+
+class LabelSmoothingLoss(nn.Module):
+    def __init__(self, vocab_size, padding_idx, smoothing=0.1):
+        """
+        vocab_size: размер словаря (количество классов)
+        padding_idx: индекс <pad>, который не участвует в вычислении ошибки
+        smoothing: коэффициент сглаживания (обычно 0.1)
+        """
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.padding_idx = padding_idx
+        self.smoothing = smoothing
+        self.confidence = 1.0 - smoothing  # вероятность истинного класса
+
+    def forward(self, logits, target):
+        """
+        logits: (batch_size * seq_len, vocab_size) - выход модели
+        target: (batch_size * seq_len) - индексы истинных слов
+        """
+        with torch.no_grad():
+            true_dist = torch.zeros_like(logits)
+            true_dist.fill_(self.smoothing / (self.vocab_size - 1))  # Распределяем вероятность на все классы
+            true_dist.scatter_(1, target.unsqueeze(1), self.confidence)  # Истинному классу даем больше веса
+            true_dist[:, self.padding_idx] = 0  # На паддинги вероятность не распределяем
+
+            mask = (target == self.padding_idx)  # Убираем вклад <pad> в лосс
+            true_dist[mask] = 0
+
+        return torch.mean(torch.sum(-true_dist * F.log_softmax(logits, dim=-1), dim=-1))
