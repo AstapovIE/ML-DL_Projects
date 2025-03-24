@@ -1,0 +1,66 @@
+schema: '2.0'
+stages:
+  prepare_data:
+    cmd: python prepare_data.py
+    deps:
+    - path: prepare_data.py
+      hash: md5
+      md5: b893cd3ec623665ca52a651e72437917
+      size: 3492
+    outs:
+    - path: data/news.csv
+      hash: md5
+      md5: 349ef031d2d31c5ffccc7fd2476d0a12
+      size: 97238817
+  train:
+    cmd: python train.py
+    deps:
+    - path: SummaryGenerator.py
+      hash: md5
+      md5: 072e0e22899a493842b66ecd599fa064
+      size: 965
+    - path: Training.py
+      hash: md5
+      md5: 7d8ebdcb1597caa664d0a6884d92ffbf
+      size: 11195
+    - path: Transformer.py
+      hash: md5
+      md5: be35be003006f07274a0fa12f7249b20
+      size: 2343
+    - path: data/news.csv
+      hash: md5
+      md5: 349ef031d2d31c5ffccc7fd2476d0a12
+      size: 97238817
+    - path: train.py
+      hash: md5
+      md5: 77a6ceaf57c8fe9531573becbd2d2e6f
+      size: 1564
+    outs:
+    - path: transformer_model.pth
+      hash: md5
+      md5: ecb6a0f13816d606bda4c7a69d70a332
+      size: 149457818
+  compute_metrics:
+    cmd: python compute_metrics.py
+    deps:
+    - path: compute_metrics.py
+      hash: md5
+      md5: 3ec9269a1a8f2970df626566f70dde2a
+      size: 903
+    - path: data/news.csv
+      hash: md5
+      md5: 349ef031d2d31c5ffccc7fd2476d0a12
+      size: 97238817
+    - path: transformer_model.pth
+      hash: md5
+      md5: ecb6a0f13816d606bda4c7a69d70a332
+      size: 149457818
+    outs:
+    - path: data/attention_0.png
+      hash: md5
+      md5: 215ef59df9e6366b91f0faa4de3b33e0
+      size: 57247
+    - path: data/demo_result.txt
+      hash: md5
+      md5: 728b97cbaaa4ca3cf29fa6837e48b65e
+      size: 9947

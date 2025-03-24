@@ -1,11 +1,11 @@
 from rouge import Rouge
-from Masker import convert_batch
+from model.Masker import convert_batch
 
 from matplotlib import pyplot as plt
 import seaborn as sns
 
 
-def task1(generator, test_iter, num_examples, device, output_file):
+def task1(model, test_iter, num_examples, device, output_file):
     """   Демонстрация результата для 5 примеров из теста и 5 собственных примеров.   """
     print("Выполняем генерацию суммаризации для примеров...")
     rouge = Rouge()
@@ -17,10 +17,11 @@ def task1(generator, test_iter, num_examples, device, output_file):
     test_batch = next(iter(test_iter))
     source_inputs, target_inputs, source_mask, target_mask = convert_batch(test_batch, device)
 
-    source_text, target_text, output_text = generator.generate_summary(
-        source_inputs[:num_examples], target_inputs[:num_examples],
-        source_mask[:num_examples], target_mask[:num_examples]
-    )
+    source_text = [model.decode_tensor(seq) for seq in source_inputs[:num_examples]]
+    target_text = [model.decode_tensor(seq) for seq in target_inputs[:num_examples]]
+
+    gen_tokens = model._generate_tokens_for_summary(source_inputs[:num_examples])#, source_mask[:num_examples])
+    output_text = [model.decode_tensor(seq) for seq in gen_tokens]
 
     with open(f"{output_file}.txt", 'w', encoding='utf-8') as f:
         for i in range(num_examples):

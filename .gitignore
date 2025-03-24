@@ -10,5 +10,6 @@ requirements.txt
 *.pkl
 *.csv
 *.zip
+*.pt
 
 *wandb/

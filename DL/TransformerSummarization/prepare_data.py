@@ -1,4 +1,5 @@
 from torchtext.data import Field, Example, Dataset, BucketIterator
+import torch
 import pandas as pd
 from tqdm.auto import tqdm
 
@@ -6,6 +7,7 @@ import os
 import pickle
 import requests
 import zipfile
+import json
 
 
 def download_file(url, filename):
@@ -26,23 +28,25 @@ def unzip_file(zip_path, extract_to="."):
 
 
 def download_data():
-    if not os.path.exists("news.csv"):
+    if not os.path.exists("data"):
+        os.mkdir("data")
+    if not os.path.exists("data/news.csv"):
         print("Файл news.csv не найден. Начинаем скачивание...")
         url = "https://drive.google.com/uc?export=download&id=1hIVVpBqM6VU4n3ERkKq4tFaH4sKN0Hab"
-        zip_path = "news.zip"
+        zip_path = "data/news.zip"
 
         # Скачиваем файл
         download_file(url, zip_path)
 
         # Распаковываем
-        unzip_file(zip_path)
+        unzip_file(zip_path, extract_to="data")
 
         print("Скачивание и разархивация завершены.")
     else:
         print("[INFO] Файл news.csv уже существует, скачивание не требуется.")
 
 
-def preprocess_and_cache_data(data, word_field, fields, cache_file="examples.pkl"):
+def preprocess_and_cache_data(data, word_field, fields, cache_file="data/examples.pkl"):
     if os.path.exists(cache_file):
         print(f"[INFO] examples для обучения уже есть. Загрузка данных из кэша: {cache_file}")
         with open(cache_file, "rb") as f:
@@ -71,7 +75,7 @@ def prepare_data(device):
     word_field = Field(tokenize='moses', init_token=SOS_TOKEN, eos_token=EOS_TOKEN, lower=True)
     fields = [('source', word_field), ('target', word_field)]
 
-    data = pd.read_csv('news.csv', delimiter=',')
+    data = pd.read_csv('data/news.csv', delimiter=',')
     examples = preprocess_and_cache_data(data, word_field, fields)
 
     # building datasets
@@ -82,10 +86,15 @@ def prepare_data(device):
     train_dataset, test_dataset = dataset.split(split_ratio=0.85)
 
     word_field.build_vocab(train_dataset, min_freq=7)
-    print('Vocab size =', len(word_field.vocab))
+    # print('Vocab size =', len(word_field.vocab))
 
     train_iter, test_iter = BucketIterator.splits(
         datasets=(train_dataset, test_dataset), batch_sizes=(16, 32), shuffle=True, device=device, sort=False
     )
     return train_iter, test_iter, word_field
+
+
+if __name__ == "__main__":
+    download_data()
+
 

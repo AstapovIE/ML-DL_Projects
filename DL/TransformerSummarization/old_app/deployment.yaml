@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iris-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: iris
+  template:
+    metadata:
+      labels:
+        app: iris
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: iris-prediction
+        image: ilyaastapov/iris_prediction:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: FLASK_ENV
+          value: "production"
+
+
+
+#          kubectl create secret docker-registry regcred \
+#          --docker-server=https://index.docker.io/v1/ \
+#          --docker-username=ваш_логин \
+#          --docker-password=ваш_пароль \
+#          --docker-email=ваш_email

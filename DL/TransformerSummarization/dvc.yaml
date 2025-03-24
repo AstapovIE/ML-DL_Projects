@@ -1,0 +1,34 @@
+# TODO вынести этот dvc ахер в отдельную папку и переместить основные модули тоже в отдельную папку
+
+stages:
+  prepare_data:
+    cmd: python prepare_data.py
+    deps:
+      - prepare_data.py
+    outs:
+      - data/news.csv:
+          cache: false  # DVC не будет трогать папку
+
+  train:
+    cmd: python train.py
+    deps:
+      - data/news.csv
+      - Transformer.py
+      - Training.py
+      - SummaryGenerator.py
+      - train.py
+    outs:
+      - bert_100.pth
+
+  compute_metrics:
+    cmd: python compute_metrics.py
+    deps:
+      - data/news.csv
+      - bert_100.pth
+      - compute_metrics.py
+    outs:
+      - data/demo_result.txt:
+          cache: false
+      - data/attention_0.png:
+          cache: false
+
