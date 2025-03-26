@@ -14,11 +14,11 @@ class ScaledDotProductAttention(nn.Module):
         d_k = query.size(-1)
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
         # print("scores before mask", scores.shape)
-        # print(scores[0][0])
+        # print(scores[:, 0, :, :3])
         if mask is not None:
             scores = scores.masked_fill(mask == 0, 1e-9)
             # print("scores after mask", scores.shape)
-            # print(scores[0][0])
+            # print(scores[:, 0, :, :3])
 
         p_attn = F.softmax(scores, dim=-1)
         p_attn = self._dropout(p_attn)

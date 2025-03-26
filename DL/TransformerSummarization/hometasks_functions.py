@@ -21,7 +21,7 @@ def task1(model, test_iter, num_examples, device, output_file):
     target_text = [model.decode_tensor(seq) for seq in target_inputs[:num_examples]]
 
     gen_tokens = model._generate_tokens_for_summary(source_inputs[:num_examples])#, source_mask[:num_examples])
-    output_text = [model.decode_tensor(seq) for seq in gen_tokens]
+    output_text = [model.decode_tensor(seq).split("</s>")[0] + "</s>" for seq in gen_tokens]
 
     with open(f"{output_file}.txt", 'w', encoding='utf-8') as f:
         for i in range(num_examples):

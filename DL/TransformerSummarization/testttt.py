@@ -1,5 +1,41 @@
 import torch
+import wandb  # Подключаем wandb
+import json
 
-data = torch.load("processed_data/data.pth", weights_only=False)
-print(type(data))  # Должно быть tuple или list
-print(data)  # Посмотреть, что внутри
+from prepare_data import prepare_data
+from model.Transformer import Transformer
+from Training import LabelSmoothingLoss, NoamOpt, fit
+from hometasks_functions import task1, task3
+
+if torch.cuda.is_available():
+    DEVICE = torch.device('cuda')
+else:
+    DEVICE = torch.device('cpu')
+print("device:", DEVICE)
+
+
+train_iter, test_iter, word_field = prepare_data(DEVICE)
+
+
+##########################################################  MODEL  #############################################################
+
+model = Transformer(vocab=word_field.vocab, d_model=256, device=DEVICE, embed=None, blocks_count=4).to(DEVICE)
+pad_idx = word_field.vocab.stoi['<pad>']
+criterion_LB = LabelSmoothingLoss(vocab_size=len(word_field.vocab), padding_idx=pad_idx, smoothing=0.1).to(DEVICE)
+optimizer = NoamOpt(model)
+
+##########################################################  TRAIN  #############################################################
+
+trained_model, train_loss, val_loss = fit(model, criterion_LB, optimizer, train_iter, epochs_count=30, val_iter=test_iter,
+                                          device=DEVICE, vocab=word_field.vocab, use_wandb=False)
+
+##########################################################  SAVE  #############################################################
+torch.save(trained_model.state_dict(), "none_30.pth")
+
+model.load_state_dict(torch.load("none_30.pth", map_location=DEVICE))
+model.eval()
+
+##########################################################  TASK  #############################################################
+task1(model, train_iter, 2, DEVICE, "data/demo_result_none_30")
+
+

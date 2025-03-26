@@ -13,9 +13,11 @@ class DecoderLayer(nn.Module):
         self._feed_forward_block = ResidualBlock(size, dropout_rate)
 
     def forward(self, inputs, encoder_output, source_mask, target_mask):
+        # print("dec - attn")
         outputs = self._self_attention_block(
             inputs, lambda inputs: self._self_attn(inputs, inputs, inputs, target_mask)
         )
+        # print("decENC - attn")
         outputs = self._attention_block(
             outputs, lambda inputs: self._encoder_attn(inputs, encoder_output, encoder_output, source_mask)
         )

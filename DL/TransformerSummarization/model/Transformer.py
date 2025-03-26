@@ -7,10 +7,6 @@ from model.PreTrainedEmbeddings import get_fasttext_emb, get_bert_emb
 from model.Masker import *
 
 class Transformer(nn.Module):
-    """
-    A standard Encoder-Decoder architecture. Base for this and many
-    other models.
-    """
     def __init__(self, vocab, d_model=256, d_ff=1024,blocks_count=4, heads_count=8, dropout_rate=0.1, embed=None,
                  device="cpu", sos_token='<s>', eos_token='</s>', pad_token='<pad>'):
         super(Transformer, self).__init__()
@@ -54,20 +50,13 @@ class Transformer(nn.Module):
     def forward(self, source_inputs, target_inputs, source_mask, target_mask):
         source_embeddings = self._emb(source_inputs)
         target_embeddings = self._emb(target_inputs)
-        # print("target_inputs", target_inputs.shape)
-        # print("target_mask", target_mask.shape)
 
         encoder_output = self.encoder(source_embeddings, source_mask)
         decoder_output = self.decoder(target_embeddings, encoder_output, source_mask, target_mask)
-        # print("decoder_output", decoder_output.shape)
-        # print()
         return decoder_output
 
     def generate_summary(self, source_inputs, target_inputs, source_mask, target_mask):
-        # print(target_mask[:2,:4,:4])
         with torch.no_grad():
-            # testout = self.forward(source_inputs, target_inputs, source_mask, target_mask)
-            # print("--------------------------------------------------------------")
             outputs = self._generate_tokens_for_summary(source_inputs, source_mask)
 
             # вывод с "<s>" и "</s>"
@@ -93,15 +82,12 @@ class Transformer(nn.Module):
             #         [self.decode_tensor(seq).split("</s>")[0].split("<s>")[1] for seq in outputs])
 
     def _generate_tokens_for_summary(self, source_inputs):
-        """
-        Генерация суммаризации без target, используя авто-регрессионный метод.
-        """
-
         batch_size = source_inputs.shape[0]
         max_len = source_inputs.shape[-1]
+        # max_len = 30
 
         # Инициализируем "ложный target" нулями (или <pad>)
-        fake_target = torch.full((batch_size, max_len), self.vocab[self.pad_token], dtype=torch.long, device=self.device)
+        fake_target = torch.full((batch_size, max_len), self.vocab[self.sos_token], dtype=torch.long, device=self.device)
 
         # Начинаем с пустого списка токенов
         generated_tokens = torch.empty((batch_size, 0), dtype=torch.long, device=self.device)
@@ -110,39 +96,42 @@ class Transformer(nn.Module):
         source_mask, target_mask = make_mask(source_inputs, fake_target, self.vocab[self.pad_token], self.device)
         source_embeddings = self._emb(source_inputs)
         encoder_output = self.encoder(source_embeddings, source_mask)
+        print(encoder_output.shape)
+        print(encoder_output[0]) # очень похожи bert
+        print(encoder_output[1]) # очень похожи bert
 
         for step in range(max_len):
             # Обновляем fake_target для текущего шага
             if generated_tokens.shape[1] > 0:
                 fake_target[:, :generated_tokens.shape[1]] = generated_tokens
 
+            print(f"############################################ {step} TOKEN ################################################")
+            print(fake_target)
+
+
 
             # Создаём маску для текущего состояния
             source_mask, target_mask = make_mask(source_inputs, fake_target, self.vocab[self.pad_token], self.device)
-            # print(fake_target.shape, target_mask.shape)
-
-            # Пропускаем через декодер
-            # generated_tokens_emb = self._emb(fake_target[:, :generated_tokens.shape[1] + 1])  # slice до текущего шага
-            # print("fake_target", fake_target)
-            # print("target_mask", target_mask)
+            print(target_mask)
+            print()
 
             generated_tokens_emb = self._emb(fake_target)
             decoder_output = self.decoder(generated_tokens_emb, encoder_output, source_mask, target_mask)
-            # print("decoder_output", decoder_output.shape, decoder_output)
+
 
 
             # Берём логиты step токена (какой шаг, такая строчка в decoder_output нам и нужна)
-            # next_token_logits = decoder_output[:, -1, :]
             next_token_logits = decoder_output[:, step, :]
-            # print(next_token_logits)
+            print("decoder_output")
+            print(decoder_output.shape)
+            print(decoder_output)
+            print("choose", next_token_logits.shape)
+            print("choose", next_token_logits)
+            # next_token_logits[0][7446] += 1111111
             next_token = next_token_logits.argmax(dim=-1, keepdim=True)  # Выбираем самый вероятный токен
+            print("next: ", next_token)
 
-            # print("before", generated_tokens)
-            # Добавляем новый токен в последовательность
             generated_tokens = torch.cat([generated_tokens, next_token], dim=1)
-            # print("after", generated_tokens)
-            # print()
-            # print()
 
             # Останавливаемся, если во всех примерах появился </s>
             if (next_token == self.vocab[self.eos_token]).all():
