@@ -1,5 +1,4 @@
-from model.Masker import convert_batch
-from model.SummaryGenerator import Generator
+from model.Masker import *
 
 import math
 from tqdm.auto import tqdm
@@ -11,6 +10,8 @@ import torch.optim as optim
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+import random
 
 tqdm.get_lock().locks = []
 
@@ -41,13 +42,13 @@ class NoamOpt(object):
         return self.factor * (self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
 
 
-def do_epoch(model, criterion, data_iter, optimizer=None, name=None, device="cpu", epoch=0, generator=None,
-             use_wandb=True):
-    epoch_loss = 0
-    is_train = optimizer is not None
-    name = name or ''
-    model.train(is_train)
+def do_epoch(model, criterion, data_iter, optimizer=None, name=None, device="cpu", epoch=0,
+             use_wandb=True, teacher_forcing_prob=0.6):
 
+    name = name or ''
+    is_train = optimizer is not None
+    model.train(is_train)
+    epoch_loss = 0
     batches_count = len(data_iter)
 
     # Список для ROUGE-метрик (если валидация)
@@ -57,21 +58,57 @@ def do_epoch(model, criterion, data_iter, optimizer=None, name=None, device="cpu
     with torch.autograd.set_grad_enabled(is_train):
         with tqdm(total=batches_count, dynamic_ncols=True, leave=True, desc=name) as progress_bar:
             for i, batch in enumerate(data_iter):
-                source_inputs, target_inputs, source_mask, target_mask = convert_batch(batch, device)
-                # logits = model.forward(source_inputs, target_inputs[:, :-1], source_mask, target_mask[:, :-1, :-1])
-                logits = model.forward(source_inputs, target_inputs[:, :], source_mask, target_mask[:, :, :])
+                src, tgt, src_mask = new_convert_batch(batch, device)
 
-                logits = logits.contiguous().view(-1, logits.shape[-1])
-                # target = target_inputs[:, 1:].contiguous().view(-1)
-                target = target_inputs[:, :].contiguous().view(-1)
-                loss = criterion(logits, target)
+                # Инициализируем с <s> токена
+                decoder_input = torch.full((src.size(0), 1),
+                                           model.vocab[model.sos_token],
+                                           device=device)
 
-                epoch_loss += loss.item()
+                logits = []
+                for i in range(tgt.size(1) - 1):  # -1 потому что предсказываем на 1 вперёд
+                    # Создаём маску для текущей длины decoder_input
+                    tgt_mask = subsequent_mask(decoder_input.size(1), device)
+                    pad_mask = (decoder_input != model.vocab[model.pad_token]).unsqueeze(1)
+                    tgt_mask = tgt_mask & pad_mask
+
+                    output = model(src, decoder_input, src_mask, tgt_mask)
+                    logits.append(output[:, -1:])
+
+                    # Scheduled sampling
+                    if random.random() < teacher_forcing_prob:
+                        next_token = tgt[:, i + 1:i + 2]  # Истинный токен
+                    else:
+                        next_token = output[:, -1:].argmax(-1)  # Предсказанный токен
+
+                    decoder_input = torch.cat([decoder_input, next_token], dim=1)
+
+                # Вычисляем loss
+                logits = torch.cat(logits, dim=1)
+                loss = criterion(logits.reshape(-1, logits.size(-1)),
+                                 tgt[:, 1:].reshape(-1))
 
                 if optimizer:
                     optimizer.optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
+
+
+                # source_inputs, target_inputs, source_mask, target_mask = convert_batch(batch, device)
+                # # logits = model.forward(source_inputs, target_inputs[:, :-1], source_mask, target_mask[:, :-1, :-1])
+                # logits = model.forward(source_inputs, target_inputs[:, :], source_mask, target_mask[:, :, :])
+                #
+                # logits = logits.contiguous().view(-1, logits.shape[-1])
+                # # target = target_inputs[:, 1:].contiguous().view(-1)
+                # target = target_inputs[:, :].contiguous().view(-1)
+                # loss = criterion(logits, target)
+                #
+                # epoch_loss += loss.item()
+                #
+                # if optimizer:
+                #     optimizer.optimizer.zero_grad()
+                #     loss.backward()
+                #     optimizer.step()
 
                 perplexity = math.exp(loss.item())
                 progress_bar.update(1)
@@ -82,14 +119,14 @@ def do_epoch(model, criterion, data_iter, optimizer=None, name=None, device="cpu
                     wandb.log({"Batch Loss": loss.item()})
 
                 # Для валидации считаем ROUGE на 5 примерах (только на одном батче)
-                if not is_train and i == 0 and generator is not None and use_wandb:
-                    source_text, target_text, output_text = generator.generate_summary(
-                        source_inputs[:5], target_inputs[:5], source_mask[:5], target_mask[:5]
-                    )
-
-                    # Вычисляем средний ROUGE
-                    scores = rouge.get_scores(output_text, target_text, avg=True)
-                    rouge_2_scores.append(scores["rouge-2"]["f"])
+                # if not is_train and i == 0 and generator is not None and use_wandb:
+                #     source_text, target_text, output_text = generator.generate_summary(
+                #         source_inputs[:5], target_inputs[:5], source_mask[:5], target_mask[:5]
+                #     )
+                #
+                #     # Вычисляем средний ROUGE
+                #     scores = rouge.get_scores(output_text, target_text, avg=True)
+                #     rouge_2_scores.append(scores["rouge-2"]["f"])
 
             final_loss = epoch_loss / batches_count
             final_perplexity = math.exp(final_loss)
@@ -98,9 +135,9 @@ def do_epoch(model, criterion, data_iter, optimizer=None, name=None, device="cpu
             progress_bar.refresh()
 
     # Если валидация, логируем ROUGE
-    if not is_train and generator is not None and use_wandb:
-        avg_rouge_2 = sum(rouge_2_scores) / len(rouge_2_scores) if rouge_2_scores else 0
-        wandb.log({"ROUGE-2": avg_rouge_2})
+    # if not is_train and generator is not None and use_wandb:
+    #     avg_rouge_2 = sum(rouge_2_scores) / len(rouge_2_scores) if rouge_2_scores else 0
+    #     wandb.log({"ROUGE-2": avg_rouge_2})
 
     return final_loss
 
@@ -120,8 +157,7 @@ def fit(model, criterion, optimizer, train_iter, epochs_count=1, val_iter=None, 
         if val_iter is not None:
             # Валидация модели на текущей эпохе
             # TODO подумать с генератором, плохо ведь каждый раз его создавать
-            generator = Generator(model=model)
-            val_loss = do_epoch(model, criterion, val_iter, None, name_prefix + '  Val:', device, epoch, generator, use_wandb=use_wandb)
+            val_loss = do_epoch(model, criterion, val_iter, None, name_prefix + '  Val:', device, epoch, use_wandb=use_wandb)
             val_losses.append(val_loss)
         else:
             val_loss = None

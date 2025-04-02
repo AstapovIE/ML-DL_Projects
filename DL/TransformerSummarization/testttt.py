@@ -26,16 +26,16 @@ optimizer = NoamOpt(model)
 
 ##########################################################  TRAIN  #############################################################
 
-trained_model, train_loss, val_loss = fit(model, criterion_LB, optimizer, train_iter, epochs_count=30, val_iter=test_iter,
+trained_model, train_loss, val_loss = fit(model, criterion_LB, optimizer, train_iter, epochs_count=2, val_iter=test_iter,
                                           device=DEVICE, vocab=word_field.vocab, use_wandb=False)
 
 ##########################################################  SAVE  #############################################################
-torch.save(trained_model.state_dict(), "none_30.pth")
+torch.save(trained_model.state_dict(), "none_2.pth")
 
-model.load_state_dict(torch.load("none_30.pth", map_location=DEVICE))
+model.load_state_dict(torch.load("none_2.pth", map_location=DEVICE))
 model.eval()
 
 ##########################################################  TASK  #############################################################
-task1(model, train_iter, 2, DEVICE, "data/demo_result_none_30")
+task1(model, train_iter, 5, DEVICE, "data/demo_result_none_2")
 
 

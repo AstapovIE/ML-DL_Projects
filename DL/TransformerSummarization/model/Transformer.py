@@ -81,7 +81,62 @@ class Transformer(nn.Module):
             #         [self.decode_tensor(seq).split("</s>")[0].split("<s>")[1] for seq in target_inputs],
             #         [self.decode_tensor(seq).split("</s>")[0].split("<s>")[1] for seq in outputs])
 
-    def _generate_tokens_for_summary(self, source_inputs):
+    def _generate_tokens_for_summary(self, source_inputs, temperature=1.5):
+        batch_size = source_inputs.shape[0]
+        max_len = source_inputs.shape[-1]
+
+        # Инициализируем с <s> токена
+        generated_tokens = torch.full((batch_size, 1),
+                                      self.vocab[self.sos_token],
+                                      dtype=torch.long,
+                                      device=self.device)
+
+        # Энкодируем исходный текст
+        source_mask = (source_inputs != self.vocab[self.pad_token]).unsqueeze(1)
+        source_embeddings = self._emb(source_inputs)
+        encoder_output = self.encoder(source_embeddings, source_mask)
+
+        for step in range(max_len):
+            # Создаём маску для текущей последовательности
+            tgt_mask = subsequent_mask(generated_tokens.size(1), self.device)
+            tgt_mask = tgt_mask & (generated_tokens != self.vocab[self.pad_token]).unsqueeze(1)
+
+            # Forward pass через декодер
+            tgt_emb = self._emb(generated_tokens)
+            decoder_output = self.decoder(tgt_emb, encoder_output, source_mask, tgt_mask)
+
+            # Берём логиты последнего токена
+            next_token_logits = decoder_output[:, -1, :]
+
+            # Применяем температуру
+            next_token_logits = next_token_logits / temperature
+
+            # Запрещаем повторение предыдущего токена
+            if generated_tokens.size(1) > 1:
+                prev_token = generated_tokens[:, -1]
+                next_token_logits[torch.arange(batch_size), prev_token] = -float('inf')
+
+            # Преобразуем логиты в вероятности
+            probs = F.softmax(next_token_logits, dim=-1)
+
+            # Выбираем следующий токен (можно использовать argmax или sampling)
+            if temperature == 0.0:
+                next_token = next_token_logits.argmax(dim=-1, keepdim=True)
+            else:
+                next_token = torch.multinomial(probs, num_samples=1)
+
+            # Добавляем новый токен к сгенерированной последовательности
+            generated_tokens = torch.cat([generated_tokens, next_token], dim=1)
+
+            # Проверяем условие остановки
+            if (next_token == self.vocab[self.eos_token]).all():
+                break
+
+        return generated_tokens
+
+
+
+    def old_generate_tokens_for_summary(self, source_inputs):
         batch_size = source_inputs.shape[0]
         max_len = source_inputs.shape[-1]
         # max_len = 30

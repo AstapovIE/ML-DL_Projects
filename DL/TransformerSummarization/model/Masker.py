@@ -16,3 +16,13 @@ def convert_batch(batch, device, pad_idx=1):
     source_mask, target_mask = make_mask(source_inputs, target_inputs, pad_idx, device)
 
     return source_inputs, target_inputs, source_mask, target_mask
+
+
+def new_convert_batch(batch, device, pad_idx=1):
+    source_inputs = batch.source.transpose(0, 1)  # (B, L_src)
+    target_inputs = batch.target.transpose(0, 1)  # (B, L_tgt)
+
+    # Маска источника (учитывает только pad-токены)
+    source_mask = (source_inputs != pad_idx).unsqueeze(1)  # (B, 1, L_src)
+
+    return source_inputs, target_inputs, source_mask
