@@ -13,3 +13,7 @@ requirements.txt
 *.pt
 
 *wandb/
+
+# Игнорировать в FaceRecognition
+DL/FaceRecognition/friends_anno.txt
+DL/FaceRecognition/friends_test_photo/
